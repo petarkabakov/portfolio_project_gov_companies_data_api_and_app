@@ -1,0 +1,22 @@
+{
+  "company_number": "00000006",
+  "company_name": "EXAMPLE COMPANY LIMITED",
+  "company_status": "active",
+  "type": "ltd",
+  "date_of_creation": "1985-06-17",
+  "jurisdiction": "england-wales",
+  "registered_office_address": {
+    "address_line_1": "1 Example Street",
+    "locality": "London",
+    "postal_code": "EC1A 1AA",
+    "country": "United Kingdom"
+  },
+  "sic_codes": ["62012"],
+  "accounts": {
+    "accounting_reference_date": {"day": "31", "month": "12"},
+    "next_due": "2027-09-30"
+  },
+  "links": {
+    "self": "/company/00000006"
+  }
+}

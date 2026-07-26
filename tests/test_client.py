@@ -137,3 +137,54 @@ def test_rate_limiter_is_actually_engaged():
     client.get_company_profile("00000006")
 
     assert clock.sleep_calls == [10.0]
+
+
+def _search_page(items: list[dict], total_results: int) -> httpx.Response:
+    return httpx.Response(200, json={"items": items, "total_results": total_results})
+
+
+@respx.mock
+def test_search_companies_paginator_stops_at_last_page():
+    route = respx.get(f"{BASE_URL}/search/companies")
+    route.side_effect = [
+        _search_page(
+            [
+                {"company_number": "00000001", "title": "COMPANY ONE"},
+                {"company_number": "00000002", "title": "COMPANY TWO"},
+            ],
+            total_results=5,
+        ),
+        _search_page(
+            [
+                {"company_number": "00000003", "title": "COMPANY THREE"},
+                {"company_number": "00000004", "title": "COMPANY FOUR"},
+            ],
+            total_results=5,
+        ),
+        # Last page: fewer items than page_size, so the paginator must stop
+        # here and never issue a 4th request (the mocked route only has 3
+        # responses queued — a 4th call would raise and fail this test).
+        _search_page([{"company_number": "00000005", "title": "COMPANY FIVE"}], total_results=5),
+    ]
+    client = make_client(make_settings(), FakeClock())
+
+    results = list(client.search_companies("example", page_size=2))
+
+    assert [r.company_number for r in results] == [
+        "00000001",
+        "00000002",
+        "00000003",
+        "00000004",
+        "00000005",
+    ]
+    assert route.call_count == 3
+
+
+@respx.mock
+def test_search_companies_stops_immediately_on_empty_first_page():
+    respx.get(f"{BASE_URL}/search/companies").mock(return_value=_search_page([], total_results=0))
+    client = make_client(make_settings(), FakeClock())
+
+    results = list(client.search_companies("no-such-company"))
+
+    assert results == []

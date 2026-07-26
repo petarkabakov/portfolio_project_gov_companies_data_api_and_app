@@ -46,7 +46,7 @@ def test_save_snapshot_round_trips_payload(repository: CompanyProfileRepository,
     assert stored_payload == payload
 
 
-def test_multiple_snapshots_for_same_company_are_both_persisted(
+def test_changed_payload_for_same_company_is_persisted_as_a_new_row(
     repository: CompanyProfileRepository, postgres_dsn: str
 ):
     first_fetch = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -73,3 +73,27 @@ def test_multiple_snapshots_for_same_company_are_both_persisted(
         (count,) = cur.fetchone()
 
     assert count == 2
+
+
+def test_identical_payload_loaded_twice_produces_only_one_row(
+    repository: CompanyProfileRepository, postgres_dsn: str
+):
+    payload = {"company_number": "00000006", "company_status": "active"}
+    first_fetch = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    second_fetch = datetime(2026, 1, 2, tzinfo=timezone.utc)
+
+    repository.save_snapshot(
+        company_number="00000006", payload=payload, fetched_at=first_fetch, http_status=200
+    )
+    repository.save_snapshot(
+        company_number="00000006", payload=payload, fetched_at=second_fetch, http_status=200
+    )
+
+    with psycopg2.connect(postgres_dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM raw.company_profile_snapshots WHERE company_number = %s",
+            ("00000006",),
+        )
+        (count,) = cur.fetchone()
+
+    assert count == 1

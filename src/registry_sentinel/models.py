@@ -19,3 +19,14 @@ class CompanyProfile(BaseModel):
     company_status: str | None = None
     type: str | None = None
     date_of_creation: date | None = None
+
+
+class CompanySearchResult(BaseModel):
+    """One item from the /search/companies results list."""
+
+    model_config = ConfigDict(extra="allow")
+
+    company_number: str
+    title: str
+    company_status: str | None = None
+    company_type: str | None = None

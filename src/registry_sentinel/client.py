@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+
 import httpx
 from tenacity import (
     RetryCallState,
@@ -15,7 +17,7 @@ from registry_sentinel.exceptions import (
     CompanyNotFoundError,
     RetriableStatusError,
 )
-from registry_sentinel.models import CompanyProfile
+from registry_sentinel.models import CompanyProfile, CompanySearchResult
 from registry_sentinel.rate_limiter import RateLimiter
 
 _exponential_backoff = wait_exponential_jitter(initial=1, max=30)
@@ -41,8 +43,8 @@ def _wait_retry_after_or_backoff(retry_state: RetryCallState) -> float:
 class CompaniesHouseClient:
     """Sync Companies House client: rate-limited, retried, and clock-driven.
 
-    Only get_company_profile exists today; adding officers/PSC/search later is
-    a new endpoint method + model, not a rewrite of this plumbing.
+    get_company_profile and search_companies exist today; adding officers/PSC
+    later is a new endpoint method + model, not a rewrite of this plumbing.
     """
 
     def __init__(
@@ -84,9 +86,40 @@ class CompaniesHouseClient:
         payload = response.json()
         return CompanyProfile.model_validate(payload), payload
 
-    def _do_request(self, method: str, path: str) -> httpx.Response:
+    def search_companies(
+        self, query: str, *, page_size: int = 100
+    ) -> Iterator[CompanySearchResult]:
+        """Follows /search/companies' start_index pagination, yielding every result.
+
+        Stops when a page comes back short of page_size or once start_index has
+        reached the API's own total_results — whichever signal is available and
+        fires first, so a missing/inconsistent total_results doesn't loop forever.
+        """
+        start_index = 0
+        while True:
+            response = self._retrying(
+                self._do_request,
+                "GET",
+                "/search/companies",
+                params={"q": query, "start_index": start_index, "items_per_page": page_size},
+            )
+            payload = response.json()
+            items = payload.get("items", [])
+            for item in items:
+                yield CompanySearchResult.model_validate(item)
+
+            if not items:
+                return
+            start_index += len(items)
+            total_results = payload.get("total_results")
+            if total_results is not None and start_index >= total_results:
+                return
+            if len(items) < page_size:
+                return
+
+    def _do_request(self, method: str, path: str, *, params: dict | None = None) -> httpx.Response:
         self._rate_limiter.acquire()
-        response = self._http.request(method, path)
+        response = self._http.request(method, path, params=params)
         self._reconcile_from_headers(response)
         self._raise_for_status(response)
         return response

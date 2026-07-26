@@ -83,7 +83,17 @@ alternative rejected, and the trade-off accepted.
   history ECCTA compliance tracking needs — an upsert would destroy exactly
   the "when did this change" signal the project exists to capture.
   Deduplicating to "latest per company" is deferred to Phase 2 dbt staging
-  models.
+  models. Idempotency is still enforced, just at the content level rather than
+  the row level: each snapshot is uniquely keyed on
+  `(company_number, sha256(payload))`, so re-running ingestion against
+  unchanged data is a no-op (`ON CONFLICT DO NOTHING`), while a genuinely
+  changed payload still lands as a new row.
+- **Pagination follows Companies House's `start_index`/`items_per_page`
+  convention.** `search_companies` walks pages until a page returns fewer
+  items than requested or the API's own `total_results` has been reached,
+  whichever fires first — a defensive stop so a missing/inconsistent
+  `total_results` can't cause an infinite loop. The same pattern generalises
+  to officers/PSC/filing-history endpoints later.
 - **`psycopg2-binary` over SQLAlchemy/psycopg3.** Already resolved
   transitively via `dbt-postgres`, so promoting it to a direct dependency adds
   no new lock/supply-chain surface. The repository layer only needs a couple

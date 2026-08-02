@@ -5,3 +5,12 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: sqlfluff-lint
+        name: sqlfluff lint (dbt models)
+        entry: uv run sqlfluff lint dbt/models
+        language: system
+        files: ^dbt/models/.*\.sql$
+        pass_filenames: false

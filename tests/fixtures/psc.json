@@ -1,0 +1,23 @@
+{
+  "kind": "individual-person-with-significant-control",
+  "name": "Jane Ann Smith",
+  "name_elements": {"forename": "Jane", "surname": "Smith"},
+  "nationality": "British",
+  "country_of_residence": "England",
+  "date_of_birth": {"month": 4, "year": 1980},
+  "notified_on": "2019-03-01",
+  "ceased_on": null,
+  "natures_of_control": [
+    "ownership-of-shares-75-to-100-percent",
+    "voting-rights-75-to-100-percent"
+  ],
+  "address": {
+    "address_line_1": "1 Example Street",
+    "locality": "London",
+    "postal_code": "EC1A 1AA",
+    "country": "United Kingdom"
+  },
+  "links": {
+    "self": "/company/00000006/persons-with-significant-control/individual/XyZ98765"
+  }
+}

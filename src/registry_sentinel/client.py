@@ -1,6 +1,8 @@
+import logging
 from collections.abc import Iterator
 
 import httpx
+from pydantic import ValidationError
 from tenacity import (
     RetryCallState,
     Retrying,
@@ -17,8 +19,15 @@ from registry_sentinel.exceptions import (
     CompanyNotFoundError,
     RetriableStatusError,
 )
-from registry_sentinel.models import CompanyProfile, CompanySearchResult
+from registry_sentinel.models import (
+    CompanyOfficer,
+    CompanyProfile,
+    CompanySearchResult,
+    PersonWithSignificantControl,
+)
 from registry_sentinel.rate_limiter import RateLimiter
+
+logger = logging.getLogger(__name__)
 
 _exponential_backoff = wait_exponential_jitter(initial=1, max=30)
 
@@ -43,8 +52,9 @@ def _wait_retry_after_or_backoff(retry_state: RetryCallState) -> float:
 class CompaniesHouseClient:
     """Sync Companies House client: rate-limited, retried, and clock-driven.
 
-    get_company_profile and search_companies exist today; adding officers/PSC
-    later is a new endpoint method + model, not a rewrite of this plumbing.
+    Adding a new endpoint is a new thin method + model, not a rewrite of this
+    plumbing — auth/rate-limit/retry/pagination all live in _paginate,
+    _do_request, and _raise_for_status.
     """
 
     def __init__(
@@ -89,7 +99,40 @@ class CompaniesHouseClient:
     def search_companies(
         self, query: str, *, page_size: int = 100
     ) -> Iterator[CompanySearchResult]:
-        """Follows /search/companies' start_index pagination, yielding every result.
+        for item in self._paginate("/search/companies", params={"q": query}, page_size=page_size):
+            yield CompanySearchResult.model_validate(item)
+
+    def get_officers(
+        self, company_number: str, *, page_size: int = 100
+    ) -> Iterator[tuple[CompanyOfficer, dict]]:
+        """Yields (validated model, raw JSON dict) per officer — the raw dict is
+        what gets persisted. Unlike search_companies, a single unparseable
+        officer is skipped-and-logged rather than propagated: one bad record in
+        a list of many shouldn't abort the whole company's officer ingestion.
+        """
+        path = f"/company/{company_number}/officers"
+        for item in self._paginate(path, params={}, page_size=page_size):
+            try:
+                yield CompanyOfficer.model_validate(item), item
+            except ValidationError:
+                logger.warning("skipping unparseable officer for %s", company_number)
+
+    def get_pscs(
+        self, company_number: str, *, page_size: int = 100
+    ) -> Iterator[tuple[PersonWithSignificantControl, dict]]:
+        """Yields (validated model, raw JSON dict) per PSC — same skip-and-log
+        policy as get_officers, for the same reason.
+        """
+        path = f"/company/{company_number}/persons-with-significant-control"
+        for item in self._paginate(path, params={}, page_size=page_size):
+            try:
+                yield PersonWithSignificantControl.model_validate(item), item
+            except ValidationError:
+                logger.warning("skipping unparseable PSC for %s", company_number)
+
+    def _paginate(self, path: str, *, params: dict, page_size: int) -> Iterator[dict]:
+        """Follows Companies House's start_index/items_per_page pagination
+        convention, yielding every raw item dict across every page.
 
         Stops when a page comes back short of page_size or once start_index has
         reached the API's own total_results — whichever signal is available and
@@ -100,13 +143,12 @@ class CompaniesHouseClient:
             response = self._retrying(
                 self._do_request,
                 "GET",
-                "/search/companies",
-                params={"q": query, "start_index": start_index, "items_per_page": page_size},
+                path,
+                params={**params, "start_index": start_index, "items_per_page": page_size},
             )
             payload = response.json()
             items = payload.get("items", [])
-            for item in items:
-                yield CompanySearchResult.model_validate(item)
+            yield from items
 
             if not items:
                 return

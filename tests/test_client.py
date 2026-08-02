@@ -188,3 +188,52 @@ def test_search_companies_stops_immediately_on_empty_first_page():
     results = list(client.search_companies("no-such-company"))
 
     assert results == []
+
+
+OFFICER = json.loads((Path(__file__).parent / "fixtures" / "officer.json").read_text())
+PSC = json.loads((Path(__file__).parent / "fixtures" / "psc.json").read_text())
+
+
+@respx.mock
+def test_get_officers_paginator_stops_at_last_page():
+    officer_2 = {**OFFICER, "name": "DOE, John"}
+    officer_3 = {**OFFICER, "name": "ROE, Richard"}
+    route = respx.get(f"{BASE_URL}/company/00000006/officers")
+    route.side_effect = [
+        _search_page([OFFICER, officer_2], total_results=3),
+        _search_page([officer_3], total_results=3),
+    ]
+    client = make_client(make_settings(), FakeClock())
+
+    results = list(client.get_officers("00000006", page_size=2))
+
+    assert [model.name for model, _ in results] == ["SMITH, Jane Ann", "DOE, John", "ROE, Richard"]
+    assert route.call_count == 2
+
+
+@respx.mock
+def test_get_officers_skips_unparseable_item_but_yields_the_rest():
+    bad_officer = {"officer_role": "director"}  # missing required "name"
+    respx.get(f"{BASE_URL}/company/00000006/officers").mock(
+        return_value=_search_page([bad_officer, OFFICER], total_results=2)
+    )
+    client = make_client(make_settings(), FakeClock())
+
+    results = list(client.get_officers("00000006"))
+
+    assert len(results) == 1
+    assert results[0][0].name == "SMITH, Jane Ann"
+    assert results[0][1] == OFFICER
+
+
+@respx.mock
+def test_get_pscs_paginator_stops_at_last_page():
+    psc_2 = {**PSC, "name": "John Doe"}
+    respx.get(f"{BASE_URL}/company/00000006/persons-with-significant-control").mock(
+        return_value=_search_page([PSC, psc_2], total_results=2)
+    )
+    client = make_client(make_settings(), FakeClock())
+
+    results = list(client.get_pscs("00000006"))
+
+    assert [model.name for model, _ in results] == ["Jane Ann Smith", "John Doe"]

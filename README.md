@@ -53,7 +53,7 @@ throwaway Postgres container on every pull request.
 |---|---|---|
 | 0 | Foundation — repo, CI, environments | 🟢 Done |
 | 1 | Batch ingestion with rate limiting | 🟢 Done |
-| 2 | dbt models, contracts, tests | ⬜ Not started |
+| 2 | dbt models, contracts, tests | 🟢 Done |
 | 3 | Dagster orchestration | ⬜ Not started |
 | 4 | Streaming ingestion | ⬜ Not started |
 | 5 | Observability | ⬜ Not started |
@@ -110,13 +110,78 @@ alternative rejected, and the trade-off accepted.
   (404s) — aborting on the first one would defeat the point of batch
   ingestion.
 
+**Phase 2 — Officers/PSC ingestion + dbt staging & marts**
+
+- **Extended ingestion before dbt, not after.** The README's flagship mart is
+  ECCTA director/PSC compliance, but Phase 1 only ingested company profiles.
+  Rather than build an aspirational mart with no real data behind it, officer
+  and PSC ingestion (`get_officers`/`get_pscs`, `raw.officer_snapshots`,
+  `raw.psc_snapshots`) was added first, reusing every Phase 1 primitive
+  (Clock, RateLimiter, tenacity-via-Clock retries) unchanged.
+- **Per-item skip-and-log for officers/PSC, unlike `search_companies`.** A
+  single malformed officer or PSC record is skipped with a warning rather
+  than aborting the whole list — one bad record among many shouldn't cost the
+  rest of a company's officers. `search_companies` still propagates
+  validation errors, since a single-item mismatch there is a genuine, whole-
+  call failure signal, not noise in a list.
+- **`RawRepository` generalizes over three identical-shaped raw tables.**
+  Company profile, officer, and PSC snapshots are all append-only and
+  content-hash-deduped, differing only in table name and natural key — a
+  `SnapshotTableSpec`/`SnapshotRepository` pair generates the DDL/inserts for
+  all three rather than tripling the same code (`CompanyProfileRepository`
+  was renamed to `RawRepository` accordingly).
+- **`identity_verification_details` extracted defensively, never assumed
+  reliable.** Real-world research (Companies House's own developer forum)
+  confirms ECCTA identity verification is mid-rollout (mandatory for existing
+  directors/PSCs by 18 Nov 2026) and that this field's shape is genuinely
+  inconsistent between records — no canonical schema published as of this
+  writing. Staging models extract it via `coalesce()` across the documented
+  alternate key names and keep the result as `text`, not a strict typed
+  sub-model; this was verified end-to-end against synthetic snapshots
+  covering all three real-world shapes (verified-with-ACSP, verified-via-
+  completion-statement, and the field's total absence).
+- **Staging is a 1:1 typed passthrough; episode-collapsing history logic
+  lives once, in intermediate.** Raw's content-hash dedup only catches
+  byte-identical whole payloads, so an unrelated field changing (e.g.
+  `accounts.next_due`) still produces a new raw row. If staging collapsed to
+  "latest per entity," intermediate would have to re-derive full history from
+  raw again anyway. Instead, intermediate's `LAG`-based episode logic
+  (partitioned per entity, boundary on the one tracked attribute — company
+  status or verification state) collapses consecutive-identical-attribute
+  rows into a single episode, while unrelated attribute changes are attached
+  from the latest snapshot within that episode via a separate join — so a
+  name change alone doesn't fracture a status episode.
+- **Marts: `dim_companies`/`dim_officers`/`dim_pscs` (Type 1, latest) plus
+  `fct_company_status_history`/`fct_officer_verification_status`/
+  `fct_psc_verification_status` (one row per change episode), every table
+  with an explicitly declared grain, dbt contracts enforced (explicit
+  `data_type` per column), and a `dbt_utils.unique_combination_of_columns`
+  test enforcing that grain in code, not just in the description.** Verified
+  by seeding deterministic synthetic data (`scripts/seed_dev_fixtures.py`)
+  covering multiple status episodes, an unrelated-field-change that must
+  *not* fracture an episode, and each documented verification-field shape —
+  then running a full `dbt build` and inspecting the resulting rows directly,
+  not just checking the build succeeded.
+- **`dbt-core`/`dbt-postgres` pinned to the matching `1.11.x` line.**
+  `dbt-postgres`'s own metadata permits `dbt-core<2.0,>=1.8.0rc1`, which had
+  let `uv.lock` float `dbt-core` to `1.12.0` — a version with no matching
+  adapter release. dbt ships adapter+core as paired releases; running core
+  ahead of its adapter is an avoidable risk, not a benefit.
+
 ## Local development
 
 ```bash
 uv sync
-cp .env.example .env   # add your Companies House API key
+cp .env.example .env   # add your Companies House API key and Neon DATABASE_URL
 uv run pytest
-uv run dbt build --target dev
+
+# dbt reads discrete PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE vars (see
+# dbt/profiles.yml.example), a different convention from the app's single
+# DATABASE_URL DSN — derive them from the same .env value before running dbt:
+cp dbt/profiles.yml.example dbt/profiles.yml   # gitignored; edit host/user/password/dbname
+uv run dbt deps --project-dir dbt --profiles-dir dbt
+uv run python scripts/seed_dev_fixtures.py     # deterministic raw.* dataset for local iteration
+uv run dbt build --project-dir dbt --profiles-dir dbt --target dev
 ```
 
 ## What I would do next

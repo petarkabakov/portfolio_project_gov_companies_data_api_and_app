@@ -1,9 +1,9 @@
-"""Batch orchestration: fetch each company, persist its snapshot, and keep
-going on a per-company failure — a batch of hundreds of company numbers will
-routinely include dissolved companies (404) or transient errors, and one bad
-number shouldn't abort the whole run. The process only exits non-zero when
-every company failed, the practical signal for something systemic (bad auth,
-network down) rather than a normal partial failure.
+"""Batch orchestration: fetch each company's profile, officers, and PSCs, and
+keep going on a per-company failure — a batch of hundreds of company numbers
+will routinely include dissolved companies (404) or transient errors, and one
+bad number shouldn't abort the whole run. The process only exits non-zero
+when every company failed, the practical signal for something systemic (bad
+auth, network down) rather than a normal partial failure.
 """
 
 import logging
@@ -16,7 +16,8 @@ from pathlib import Path
 from registry_sentinel.client import CompaniesHouseClient
 from registry_sentinel.config import Settings
 from registry_sentinel.exceptions import CompanyNotFoundError, RegistrySentinelError
-from registry_sentinel.repository import CompanyProfileRepository
+from registry_sentinel.models import extract_officer_id, extract_psc_id
+from registry_sentinel.repository import RawRepository
 
 logger = logging.getLogger(__name__)
 
@@ -26,19 +27,69 @@ class IngestResult:
     company_number: str
     ok: bool
     error: str | None = None
+    officers_ingested: int = 0
+    pscs_ingested: int = 0
+
+
+def _ingest_officers(
+    company_number: str, *, client: CompaniesHouseClient, repository: RawRepository
+) -> int:
+    count = 0
+    try:
+        for _, raw in client.get_officers(company_number):
+            officer_id = extract_officer_id(raw)
+            if officer_id is None:
+                logger.warning(
+                    "officer for %s missing parseable officer_id; skipping", company_number
+                )
+                continue
+            repository.save_officer(
+                company_number=company_number,
+                officer_id=officer_id,
+                payload=raw,
+                fetched_at=datetime.now(timezone.utc),
+                http_status=200,
+            )
+            count += 1
+    except RegistrySentinelError as exc:
+        logger.error("failed to ingest officers for %s: %s", company_number, exc)
+    return count
+
+
+def _ingest_pscs(
+    company_number: str, *, client: CompaniesHouseClient, repository: RawRepository
+) -> int:
+    count = 0
+    try:
+        for _, raw in client.get_pscs(company_number):
+            psc_id = extract_psc_id(raw)
+            if psc_id is None:
+                logger.warning("PSC for %s missing parseable psc_id; skipping", company_number)
+                continue
+            repository.save_psc(
+                company_number=company_number,
+                psc_id=psc_id,
+                payload=raw,
+                fetched_at=datetime.now(timezone.utc),
+                http_status=200,
+            )
+            count += 1
+    except RegistrySentinelError as exc:
+        logger.error("failed to ingest PSCs for %s: %s", company_number, exc)
+    return count
 
 
 def ingest_batch(
     company_numbers: Iterable[str],
     *,
     client: CompaniesHouseClient,
-    repository: CompanyProfileRepository,
+    repository: RawRepository,
 ) -> list[IngestResult]:
     results = []
     for number in company_numbers:
         try:
             _, raw = client.get_company_profile(number)
-            repository.save_snapshot(
+            repository.save_company_profile(
                 company_number=number,
                 payload=raw,
                 fetched_at=datetime.now(timezone.utc),
@@ -52,7 +103,16 @@ def ingest_batch(
             results.append(IngestResult(number, ok=False, error=str(exc)))
         else:
             logger.info("ingested %s", number)
-            results.append(IngestResult(number, ok=True))
+            officers_ingested = _ingest_officers(number, client=client, repository=repository)
+            pscs_ingested = _ingest_pscs(number, client=client, repository=repository)
+            results.append(
+                IngestResult(
+                    number,
+                    ok=True,
+                    officers_ingested=officers_ingested,
+                    pscs_ingested=pscs_ingested,
+                )
+            )
     return results
 
 
@@ -72,7 +132,7 @@ def main() -> None:
 
     with (
         CompaniesHouseClient(settings) as client,
-        CompanyProfileRepository(settings.database_url) as repository,
+        RawRepository(settings.database_url) as repository,
     ):
         repository.ensure_schema()
         results = ingest_batch(numbers, client=client, repository=repository)

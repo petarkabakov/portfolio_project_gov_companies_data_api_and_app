@@ -1,0 +1,57 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    description: >
+      Append-only ingestion snapshots written by the Python ingestion client
+      (src/registry_sentinel). Every row is an immutable observation; content-hash
+      deduplication only prevents re-ingesting byte-identical payloads, so a company
+      or officer/PSC can have many rows over time — that history is the point.
+    tables:
+      - name: company_profile_snapshots
+        description: One row per observed company profile snapshot.
+        columns:
+          - name: company_number
+            description: Companies House company number.
+            tests:
+              - not_null
+          - name: fetched_at
+            tests:
+              - not_null
+          - name: payload
+            description: Full raw JSON response from GET /company/{company_number}.
+
+      - name: officer_snapshots
+        description: One row per observed officer-appointment snapshot.
+        columns:
+          - name: company_number
+            tests:
+              - not_null
+          - name: officer_id
+            description: Parsed from links.officer.appointments on the raw payload.
+            tests:
+              - not_null
+          - name: fetched_at
+            tests:
+              - not_null
+          - name: payload
+            description: Full raw JSON item from GET /company/{company_number}/officers.
+
+      - name: psc_snapshots
+        description: One row per observed persons-with-significant-control snapshot.
+        columns:
+          - name: company_number
+            tests:
+              - not_null
+          - name: psc_id
+            description: Parsed from links.self on the raw payload.
+            tests:
+              - not_null
+          - name: fetched_at
+            tests:
+              - not_null
+          - name: payload
+            description: >
+              Full raw JSON item from
+              GET /company/{company_number}/persons-with-significant-control.

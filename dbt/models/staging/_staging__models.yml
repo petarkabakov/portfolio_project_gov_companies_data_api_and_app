@@ -1,0 +1,86 @@
+version: 2
+
+models:
+  - name: stg_company_profiles
+    description: >
+      Typed, row-for-row extraction of every raw company profile snapshot.
+      Grain: one row per observed snapshot (company_number, fetched_at) —
+      not deduplicated to latest; see int_company_profile_history for that.
+    columns:
+      - name: snapshot_id
+        tests:
+          - unique
+          - not_null
+      - name: company_number
+        tests:
+          - not_null
+
+  - name: stg_officers
+    description: >
+      Typed, row-for-row extraction of every raw officer snapshot.
+      Grain: one row per observed snapshot (company_number, officer_id, fetched_at).
+    columns:
+      - name: snapshot_id
+        tests:
+          - unique
+          - not_null
+      - name: company_number
+        tests:
+          - not_null
+      - name: officer_id
+        tests:
+          - not_null
+      - name: officer_role
+        description: >
+          Enumerated by Companies House docs but not fully trusted given the
+          same API-instability affecting identity_verification_details.
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - director
+                  - secretary
+                  - llp-member
+                  - llp-designated-member
+                  - corporate-director
+                  - corporate-secretary
+                  - corporate-llp-member
+                  - corporate-llp-designated-member
+                  - judicial-factor
+                  - receiver-manager
+                  - manager
+                  - member-of-a-supervisory-board
+                  - member-of-an-administrative-organ
+                  - member-of-a-management-organ
+              config:
+                severity: warn
+
+  - name: stg_pscs
+    description: >
+      Typed, row-for-row extraction of every raw PSC snapshot.
+      Grain: one row per observed snapshot (company_number, psc_id, fetched_at).
+    columns:
+      - name: snapshot_id
+        tests:
+          - unique
+          - not_null
+      - name: company_number
+        tests:
+          - not_null
+      - name: psc_id
+        tests:
+          - not_null
+      - name: kind
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - individual-person-with-significant-control
+                  - corporate-entity-person-with-significant-control
+                  - legal-person-person-with-significant-control
+                  - super-secure-person-with-significant-control
+                  - individual-beneficial-owner
+                  - corporate-entity-beneficial-owner
+                  - legal-person-beneficial-owner
+              config:
+                severity: warn

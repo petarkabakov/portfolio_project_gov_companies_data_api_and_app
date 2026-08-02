@@ -1,0 +1,45 @@
+version: 2
+
+models:
+  - name: int_company_profile_history
+    description: >
+      Company status change episodes. Grain: one row per
+      (company_number, effective_from) — one row per distinct company_status
+      episode, not per raw snapshot.
+    columns:
+      - name: company_number
+        tests:
+          - not_null
+      - name: effective_from
+        tests:
+          - not_null
+
+  - name: int_officer_verification_history
+    description: >
+      Officer identity-verification-status change episodes. Grain: one row
+      per (company_number, officer_id, effective_from).
+    columns:
+      - name: company_number
+        tests:
+          - not_null
+      - name: officer_id
+        tests:
+          - not_null
+      - name: effective_from
+        tests:
+          - not_null
+
+  - name: int_psc_verification_history
+    description: >
+      PSC identity-verification-status change episodes. Grain: one row per
+      (company_number, psc_id, effective_from).
+    columns:
+      - name: company_number
+        tests:
+          - not_null
+      - name: psc_id
+        tests:
+          - not_null
+      - name: effective_from
+        tests:
+          - not_null

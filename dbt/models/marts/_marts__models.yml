@@ -1,0 +1,233 @@
+version: 2
+
+models:
+  - name: dim_companies
+    description: "Grain: one row per company_number. Type 1 (latest known attributes)."
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: company_number
+        data_type: text
+        tests:
+          - unique
+          - not_null
+      - name: company_name
+        data_type: text
+      - name: company_status
+        data_type: text
+      - name: company_type
+        data_type: text
+      - name: jurisdiction
+        data_type: text
+      - name: last_seen_at
+        data_type: timestamp with time zone
+        tests:
+          - not_null
+
+  - name: dim_officers
+    description: "Grain: one row per (company_number, officer_id). Type 1 (latest known attributes)."
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: company_number
+        data_type: text
+        tests:
+          - not_null
+      - name: officer_id
+        data_type: text
+        tests:
+          - not_null
+      - name: officer_name
+        data_type: text
+      - name: officer_role
+        data_type: text
+      - name: appointed_on
+        data_type: date
+      - name: resigned_on
+        data_type: date
+      - name: nationality
+        data_type: text
+      - name: country_of_residence
+        data_type: text
+      - name: last_seen_at
+        data_type: timestamp with time zone
+        tests:
+          - not_null
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+            - company_number
+            - officer_id
+
+  - name: dim_pscs
+    description: "Grain: one row per (company_number, psc_id). Type 1 (latest known attributes)."
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: company_number
+        data_type: text
+        tests:
+          - not_null
+      - name: psc_id
+        data_type: text
+        tests:
+          - not_null
+      - name: kind
+        data_type: text
+      - name: psc_name
+        data_type: text
+      - name: natures_of_control
+        data_type: jsonb
+      - name: notified_on
+        data_type: date
+      - name: ceased_on
+        data_type: date
+      - name: nationality
+        data_type: text
+      - name: country_of_residence
+        data_type: text
+      - name: last_seen_at
+        data_type: timestamp with time zone
+        tests:
+          - not_null
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+            - company_number
+            - psc_id
+
+  - name: fct_company_status_history
+    description: >
+      Grain: one row per (company_number, effective_from) — one row per
+      company_status episode, not per raw snapshot.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: company_number
+        data_type: text
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_companies')
+                field: company_number
+      - name: company_status
+        data_type: text
+      - name: company_name
+        data_type: text
+      - name: company_type
+        data_type: text
+      - name: jurisdiction
+        data_type: text
+      - name: effective_from
+        data_type: timestamp with time zone
+        tests:
+          - not_null
+      - name: effective_to
+        data_type: timestamp with time zone
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+            - company_number
+            - effective_from
+
+  - name: fct_officer_verification_status
+    description: >
+      Grain: one row per (company_number, officer_id, effective_from) — one
+      row per verification-status-change episode. identity_verified_on is
+      kept as text (not cast to date): Companies House's own developer forum
+      documents identity_verification_details as inconsistently shaped, so
+      this value isn't assumed to always be a clean date string.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: company_number
+        data_type: text
+        tests:
+          - not_null
+      - name: officer_id
+        data_type: text
+        tests:
+          - not_null
+      - name: is_identity_verified
+        data_type: boolean
+      - name: officer_name
+        data_type: text
+      - name: officer_role
+        data_type: text
+      - name: appointed_on
+        data_type: date
+      - name: resigned_on
+        data_type: date
+      - name: identity_verified_on
+        data_type: text
+      - name: acsp_name
+        data_type: text
+      - name: effective_from
+        data_type: timestamp with time zone
+        tests:
+          - not_null
+      - name: effective_to
+        data_type: timestamp with time zone
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+            - company_number
+            - officer_id
+            - effective_from
+
+  - name: fct_psc_verification_status
+    description: >
+      Grain: one row per (company_number, psc_id, effective_from) — one row
+      per verification-status-change episode. Same identity_verified_on
+      caveat as fct_officer_verification_status.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: company_number
+        data_type: text
+        tests:
+          - not_null
+      - name: psc_id
+        data_type: text
+        tests:
+          - not_null
+      - name: is_identity_verified
+        data_type: boolean
+      - name: kind
+        data_type: text
+      - name: psc_name
+        data_type: text
+      - name: natures_of_control
+        data_type: jsonb
+      - name: notified_on
+        data_type: date
+      - name: ceased_on
+        data_type: date
+      - name: identity_verified_on
+        data_type: text
+      - name: acsp_name
+        data_type: text
+      - name: effective_from
+        data_type: timestamp with time zone
+        tests:
+          - not_null
+      - name: effective_to
+        data_type: timestamp with time zone
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+            - company_number
+            - psc_id
+            - effective_from

@@ -1,0 +1,26 @@
+{
+  "name": "SMITH, Jane Ann",
+  "officer_role": "director",
+  "appointed_on": "2019-03-01",
+  "resigned_on": null,
+  "nationality": "British",
+  "occupation": "Company Director",
+  "country_of_residence": "England",
+  "date_of_birth": {"month": 4, "year": 1980},
+  "address": {
+    "address_line_1": "1 Example Street",
+    "locality": "London",
+    "postal_code": "EC1A 1AA",
+    "country": "United Kingdom"
+  },
+  "identity_verification_details": {
+    "identity_verified_on": "2025-07-16",
+    "authorised_corporate_service_provider_name": "DE PINNA LLP"
+  },
+  "links": {
+    "self": "/company/00000006/appointments/abc123",
+    "officer": {
+      "appointments": "/officers/aBcDeF12345/appointments"
+    }
+  }
+}

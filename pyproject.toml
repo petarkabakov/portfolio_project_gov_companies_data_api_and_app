@@ -10,8 +10,8 @@ dependencies = [
     "pydantic-settings",
     "psycopg2-binary",
     "tenacity",
-    "dbt-core",
-    "dbt-postgres",
+    "dbt-core>=1.11,<1.12",
+    "dbt-postgres>=1.11,<1.12",
     "dagster",
     "dagster-webserver",
     "streamlit",
@@ -24,6 +24,7 @@ dev = [
     "respx",
     "ruff",
     "sqlfluff",
+    "sqlfluff-templater-dbt",
     "pre-commit",
 ]
 

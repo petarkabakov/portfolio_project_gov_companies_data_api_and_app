@@ -10,6 +10,7 @@ registry_sentinel:
       dbname: "{{ env_var('PGDATABASE') }}"
       schema: dev
       threads: 4
+      sslmode: require
 
     ci:
       type: postgres
